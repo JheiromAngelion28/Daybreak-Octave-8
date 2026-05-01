@@ -23,7 +23,7 @@ from PyQt6.QtCore import Qt, QTimer, QRectF, QPropertyAnimation, QEasingCurve
 from PyQt6.QtGui import QPixmap, QColor, QPainter, QPen, QFont
 
 # =============================================================================
-# 0. RESOURCE RESOLVER (For .exe Portability)
+# 0. RESOURCE RESOLVER
 # =============================================================================
 def resource_path(relative_path):
     try:
@@ -40,14 +40,12 @@ class StrengthGauge(QWidget):
         super().__init__()
         self.setFixedSize(160, 160)
         self.percent = 0
-        self.status = "AWAITING"
         self.color = QColor("#2A2F35")
 
     def update_strength(self, password):
         if not password:
             self.percent = 0; self.update(); return
         
-        # Calculate Pool Size for Shannon Entropy
         pool = 0
         if any(c.islower() for c in password): pool += 26
         if any(c.isupper() for c in password): pool += 26
@@ -57,9 +55,9 @@ class StrengthGauge(QWidget):
         entropy = len(password) * math.log2(pool) if pool > 0 else 0
         self.percent = min(100, int((entropy / 128.0) * 100))
         
-        if entropy < 50: self.color = QColor("#FF5F5F") # Weak
-        elif entropy < 80: self.color = QColor("#FFBD2E") # Moderate
-        else: self.color = QColor("#00D4FF") # Strong
+        if entropy < 50: self.color = QColor("#FF5F5F")
+        elif entropy < 80: self.color = QColor("#FFBD2E")
+        else: self.color = QColor("#00D4FF")
         self.update()
 
     def paintEvent(self, event):
@@ -81,8 +79,6 @@ class SecurityEngine:
         self.vault = {}
         self.is_online = True 
         self.db_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vault.db")
-        
-        # Interview Logic: Root/Recovery Constants
         self._ROOT_HASH = hashlib.sha256(b"ROOT-ADMIN-2026").hexdigest()
         self._RECOVERY_KEY = "DAYBREAK-X9-RECOVERY-AUTH"
 
@@ -121,11 +117,11 @@ class SecurityEngine:
                     self.vault = json.loads(AESGCM(self.key).decrypt(n, ct, None).decode())
             except: self.vault = {}
 
-    def modify(self, app, user, pwd, cat, delete=False):
+    def modify(self, name, data, delete=False):
         if delete:
-            if app in self.vault: del self.vault[app]
+            if name in self.vault: del self.vault[name]
         else:
-            self.vault[app] = {"user": user, "pass": pwd, "cat": cat, "ts": time.time()}
+            self.vault[name] = data
         self._save()
 
     def generate(self, seed, length):
@@ -142,17 +138,17 @@ class DaybreakApp(QMainWindow):
     def __init__(self):
         super().__init__()
         self.db = SecurityEngine()
-        self.setWindowTitle("Daybreak Octave 8 - Professional")
-        self.setFixedSize(850, 720)
+        self.setWindowTitle("Daybreak Octave 8")
+        self.setFixedSize(850, 750) # Slightly increased height for card fields
         
         self.setStyleSheet("""
             QMainWindow, QWidget { background-color: #0A0D10; color: #E1E1E1; font-family: 'Segoe UI'; }
-            QLineEdit { background-color: #12161B; border: 1px solid #2A2F35; border-radius: 4px; padding: 12px; color: white; }
+            QLineEdit, QComboBox { background-color: #12161B; border: 1px solid #2A2F35; border-radius: 4px; padding: 10px; color: white; }
             QPushButton { background: qlineargradient(x1:0, y1:0, x2:1, y2:1, stop:0 #00D4FF, stop:1 #090979); color: white; border-radius: 4px; padding: 12px; font-weight: bold; border: none; }
             QPushButton#NavBtnActive { background: #1F6FEB; color: white; text-align: left; padding: 15px; }
             QPushButton#NavBtn { background: transparent; text-align: left; padding: 15px; color: #8B949E; }
             QFrame#Sidebar { background-color: #0D1117; border-right: 1px solid #30363D; }
-            QFrame#Card { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; }
+            QFrame#Card { background-color: #161B22; border-radius: 8px; border: 1px solid #30363D; padding: 10px; }
             QListWidget { background: #0D1117; border: 1px solid #2A2F35; border-radius: 4px; }
         """)
 
@@ -163,7 +159,6 @@ class DaybreakApp(QMainWindow):
     def init_signin(self):
         page = QWidget(); layout = QVBoxLayout(page); layout.setContentsMargins(50, 20, 50, 50)
         
-        # Expert UI: Logo & Cover Image (Corrected PNG Pathing)
         l_path = resource_path("Desktop Password Manager App Logo.png")
         if os.path.exists(l_path):
             l = QLabel(); l.setPixmap(QPixmap(l_path).scaledToWidth(140, Qt.TransformationMode.SmoothTransformation))
@@ -175,7 +170,7 @@ class DaybreakApp(QMainWindow):
             layout.addWidget(h, alignment=Qt.AlignmentFlag.AlignCenter)
 
         self.u_in = QLineEdit(placeholderText="Username (Jheirom)"); self.u_in.setFixedWidth(320)
-        self.p_in = QLineEdit(placeholderText="Master Key (1234)", echoMode=QLineEdit.EchoMode.Password); self.p_in.setFixedWidth(320)
+        self.p_in = QLineEdit(placeholderText="Master Key", echoMode=QLineEdit.EchoMode.Password); self.p_in.setFixedWidth(320)
         
         btn_box = QHBoxLayout()
         root_btn = QPushButton("ROOT BYPASS"); root_btn.setStyleSheet("background: #30363D; color: #FF5F5F;"); root_btn.clicked.connect(self.root_login)
@@ -199,7 +194,6 @@ class DaybreakApp(QMainWindow):
     def root_login(self):
         pwd, ok = QInputDialog.getText(self, "Emergency", "Root Password:", QLineEdit.EchoMode.Password)
         if ok and self.db.auth_root(pwd): self.show_hub()
-        elif ok: QMessageBox.critical(self, "Denied", "Root Auth Failed.")
 
     def recovery_login(self):
         key, ok = QInputDialog.getText(self, "Recovery", "Physical Recovery Key:", QLineEdit.EchoMode.Normal)
@@ -249,36 +243,84 @@ class DaybreakApp(QMainWindow):
         self.list_w.itemClicked.connect(self.fill_fields)
         
         card = QFrame(); card.setObjectName("Card"); c_layout = QVBoxLayout(card)
-        self.app_i = QLineEdit(placeholderText="App/Site"); self.user_i = QLineEdit(placeholderText="Username"); self.pass_i = QLineEdit(placeholderText="Password")
+        
+        # New: Type Selector
+        self.type_select = QComboBox()
+        self.type_select.addItems(["Login Credential", "Payment Card"])
+        self.type_select.currentIndexChanged.connect(self.toggle_entry_ui)
+        
+        self.input_stack = QStackedWidget()
+        
+        # Login Inputs
+        login_w = QWidget(); ll = QVBoxLayout(login_w); ll.setContentsMargins(0,0,0,0)
+        self.app_i = QLineEdit(placeholderText="App/Site")
+        self.user_i = QLineEdit(placeholderText="Username")
+        self.pass_i = QLineEdit(placeholderText="Password")
+        ll.addWidget(self.app_i); ll.addWidget(self.user_i); ll.addWidget(self.pass_i)
+        
+        # Payment Inputs
+        pay_w = QWidget(); pl = QVBoxLayout(pay_w); pl.setContentsMargins(0,0,0,0)
+        self.c_label_i = QLineEdit(placeholderText="Card Label (e.g. Bank Visa)")
+        self.c_holder_i = QLineEdit(placeholderText="Cardholder Name")
+        self.c_num_i = QLineEdit(placeholderText="Card Number")
+        self.c_exp_i = QLineEdit(placeholderText="Expiry (MM/YY)"); self.c_cvv_i = QLineEdit(placeholderText="CVV")
+        pl.addWidget(self.c_label_i); pl.addWidget(self.c_holder_i); pl.addWidget(self.c_num_i); pl.addWidget(self.c_exp_i); pl.addWidget(self.c_cvv_i)
+        
+        self.input_stack.addWidget(login_w); self.input_stack.addWidget(pay_w)
         
         btns = QHBoxLayout()
         add_b = QPushButton("SECURE"); add_b.clicked.connect(self.save_entry)
         del_b = QPushButton("PURGE"); del_b.setStyleSheet("background: #30363D; color: #FF5F5F;"); del_b.clicked.connect(self.delete_entry)
         btns.addWidget(add_b); btns.addWidget(del_b)
         
-        c_layout.addWidget(self.app_i); c_layout.addWidget(self.user_i); c_layout.addWidget(self.pass_i); c_layout.addLayout(btns)
+        c_layout.addWidget(QLabel("ENTRY TYPE"))
+        c_layout.addWidget(self.type_select)
+        c_layout.addWidget(self.input_stack)
+        c_layout.addLayout(btns)
+        
         l.addWidget(self.list_w); l.addWidget(card); return p
+
+    def toggle_entry_ui(self, index):
+        self.input_stack.setCurrentIndex(index)
 
     def fill_fields(self, item):
         e = self.db.vault[item.text()]
-        self.app_i.setText(item.text()); self.user_i.setText(e['user']); self.pass_i.setText(e['pass'])
+        if e.get('type') == 'payment':
+            self.type_select.setCurrentIndex(1)
+            self.c_label_i.setText(item.text())
+            self.c_holder_i.setText(e['holder']); self.c_num_i.setText(e['num'])
+            self.c_exp_i.setText(e['exp']); self.c_cvv_i.setText(e['cvv'])
+        else:
+            self.type_select.setCurrentIndex(0)
+            self.app_i.setText(item.text())
+            self.user_i.setText(e['user']); self.pass_i.setText(e['pass'])
 
     def save_entry(self):
         if not self.db.is_online: 
             QMessageBox.warning(self, "Blocked", "Modifications require authenticated online connection."); return
-        if self.app_i.text():
-            self.db.modify(self.app_i.text(), self.user_i.text(), self.pass_i.text(), "General")
-            self.list_w.clear(); self.list_w.addItems(self.db.vault.keys())
+        
+        if self.type_select.currentIndex() == 0: # Login
+            name = self.app_i.text()
+            if not name: return
+            data = {"type": "login", "user": self.user_i.text(), "pass": self.pass_i.text(), "ts": time.time()}
+        else: # Payment
+            name = self.c_label_i.text()
+            if not name: return
+            data = {"type": "payment", "holder": self.c_holder_i.text(), "num": self.c_num_i.text(), 
+                    "exp": self.c_exp_i.text(), "cvv": self.c_cvv_i.text(), "ts": time.time()}
+        
+        self.db.modify(name, data)
+        self.list_w.clear(); self.list_w.addItems(self.db.vault.keys())
 
     def delete_entry(self):
         if not self.db.is_online: return
-        self.db.modify(self.app_i.text(), "", "", "", delete=True)
+        name = self.app_i.text() if self.type_select.currentIndex() == 0 else self.c_label_i.text()
+        self.db.modify(name, {}, delete=True)
         self.list_w.clear(); self.list_w.addItems(self.db.vault.keys())
 
     def create_gen_tab(self):
         p = QWidget(); l = QVBoxLayout(p); l.setContentsMargins(40,40,40,40)
         l.addWidget(QLabel("DETERMINISTIC ENTROPY GENERATOR"))
-        
         self.gauge = StrengthGauge()
         l.addWidget(self.gauge, alignment=Qt.AlignmentFlag.AlignCenter)
         
@@ -287,7 +329,6 @@ class DaybreakApp(QMainWindow):
         self.len_sld = QSlider(Qt.Orientation.Horizontal); self.len_sld.setRange(8, 64); self.len_sld.setValue(16); self.len_sld.valueChanged.connect(self.update_gen)
         self.len_lbl = QLabel("Length: 16")
         self.gen_out = QLineEdit(); self.gen_out.setReadOnly(True); self.gen_out.setStyleSheet("color: #00D4FF; font-size: 18px; text-align: center; border:none;")
-        
         copy_b = QPushButton("COPY PASSWORD"); copy_b.clicked.connect(lambda: QApplication.clipboard().setText(self.gen_out.text()))
         
         cl.addWidget(self.seed_in); cl.addWidget(self.len_lbl); cl.addWidget(self.len_sld); cl.addWidget(self.gen_out); cl.addWidget(copy_b)
